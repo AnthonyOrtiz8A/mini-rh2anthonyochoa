@@ -10,9 +10,7 @@ clase, a lo largo del Módulo I: Fundamentos de React + TypeScript.
 - [React 18](https://react.dev) — librería de UI.
 - [TypeScript](https://www.typescriptlang.org) — tipado estático.
 - [ESLint](https://eslint.org) (`typescript-eslint` + `eslint-plugin-react-hooks` +
-  `eslint-plugin-react-refresh`) — el linter del proyecto. El scaffold de Vite trae
-  Oxlint por defecto, pero este proyecto lo reemplazó por ESLint para que coincida con
-  la extensión de VS Code que se instala en la Clase 1.
+  `eslint-plugin-react-refresh`) — el linter del proyecto.
 
 ## Cómo correrlo
 
