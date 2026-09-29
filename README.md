@@ -37,28 +37,3 @@ src/
 ├── types/      # Interfaces y types de TypeScript compartidos
 └── utils/      # Funciones utilitarias y datos de ejemplo (mockData)
 ```
-
-## Avance del curso
-
-- **Clase 1 — Ecosistema Frontend Moderno:** sesión de fundamentos y preparación del
-  entorno (Node.js, VS Code, Git, GitHub). No se escribió código de la aplicación.
-- **Clase 2 — TypeScript Esencial para React:** nace este proyecto.
-  - Scaffold inicial con `npm create vite -- --template react-ts` y la arquitectura de
-    carpetas de arriba.
-  - `src/types/index.ts` — todos los tipos base del dominio (`Department`,
-    `EmployeeRole`, `EmployeeStatus`, `Employee`, DTOs, `User`, `LoginCredentials`,
-    respuestas de API, `NavItem`).
-  - `src/components/EmployeeCard.tsx` — primer componente tipado, con props,
-    diccionarios `Record<string, string>` para colores/etiquetas de estado, y su JSX
-    completo (avatar, nombre/puesto, badges de departamento y estado).
-  - `src/utils/mockData.ts` — datos de ejemplo (`mockEmployees`) tipados como
-    `Employee[]`.
-  - `src/layouts/Header.tsx` — componente de layout con props opcionales (`user`,
-    `onLogout`) y renderizado condicional del bloque de bienvenida.
-  - `src/App.tsx` — ensambla todo: renderiza `Header` y una grilla de `EmployeeCard`
-    a partir de `mockEmployees`.
-
-Cada clase se desarrolla en su propia rama `feature_clase_NN` (branch desde `develop`)
-y se integra a `develop` una vez verificada (build sin errores + confirmación visual en
-el navegador). `main` y `stage` solo avanzan cuando el instructor lo indica
-explícitamente.
