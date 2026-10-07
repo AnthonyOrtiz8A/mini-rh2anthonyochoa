@@ -2,7 +2,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AuthUser, LoginCredentials } from '../types';
+import toast from 'react-hot-toast';
 import { authService, isTokenExpired } from '../services/authService';
+import { extractErrorMessage } from '../utils/errorHandler';
 
 // El refresh token rota: usarlo dos veces invalida la sesión que acaba de
 // renovarse. React StrictMode (y una carrera entre el chequeo periódico y el
@@ -41,14 +43,10 @@ export const useAuthStore = create<AuthState>()(
         try {
           const user = await authService.login(credentials);
           set({ user, isAuthenticated: true, isLoading: false });
+          toast.success(`Bienvenido, ${user.firstName} 👋`);
         } catch (err: unknown) {
-          // Axios envuelve el error del servidor — extraemos su mensaje real
-          const serverMessage = (err as { response?: { data?: { error?: { message?: string } } } })
-            ?.response?.data?.error?.message;
-          set({
-            error: serverMessage || 'Credenciales incorrectas o API no disponible.',
-            isLoading: false,
-          });
+          // Mensaje en español según error.code (INVALID_CREDENTIALS, red caída...)
+          set({ error: extractErrorMessage(err), isLoading: false });
         }
       },
 
@@ -56,6 +54,7 @@ export const useAuthStore = create<AuthState>()(
         const refreshToken = get().user?.refreshToken;
         if (refreshToken) {
           await authService.logout(refreshToken);
+          toast.success('Sesión cerrada correctamente.');
         }
         set({ user: null, isAuthenticated: false, error: null });
       },
@@ -78,6 +77,7 @@ export const useAuthStore = create<AuthState>()(
             // El refresh token también venció o fue revocado: no hay forma de
             // seguir la sesión sin pedirle al usuario que inicie sesión de nuevo.
             set({ user: null, isAuthenticated: false });
+            toast.error('Tu sesión ha expirado. Inicia sesión de nuevo.');
             return null;
           })
           .finally(() => {
