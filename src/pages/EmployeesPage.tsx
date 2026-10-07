@@ -9,6 +9,7 @@ import EmployeeForm from '../components/EmployeeForm';
 import { useEmployees, useCreateEmployee, useUpdateEmployee, useDeleteEmployee } from '../hooks/useEmployees';
 import type { EmployeeFormData } from '../schemas/employeeSchema';
 import { useHasRole } from '../components/RoleGuard';
+import { extractErrorMessage } from '../utils/errorHandler';
 
 const formFieldClass = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent';
 
@@ -33,7 +34,7 @@ function EmployeesPage() {
 
   // Estado del SERVIDOR: la lista de empleados, filtrada. TanStack Query se encarga
   // de pedirla, cachearla y mantenerla sincronizada — no hay useEffect ni useState local.
-  const { data, isLoading: loading, isError, error: queryError } = useEmployees({
+  const { data, isLoading: loading, isError, error: queryError, refetch, isRefetching } = useEmployees({
     search: search || undefined,
     department: selectedDepartment || undefined,
     status: selectedStatus || undefined,
@@ -197,11 +198,21 @@ function EmployeesPage() {
 
       {/* Estado de error */}
       {isError && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
-          <p className="text-red-700 font-medium">Error al cargar los empleados</p>
-          <p className="text-red-500 text-sm mt-1">
-            {(queryError as Error)?.message || 'Error desconocido'}
+        <div className="bg-white border border-red-200 rounded-xl shadow-sm p-6 max-w-lg mx-auto text-center">
+          <div className="mx-auto mb-3 w-12 h-12 rounded-full bg-red-100 flex items-center justify-center text-red-600 text-xl font-bold">
+            !
+          </div>
+          <p className="text-red-700 font-semibold">Error al cargar los empleados</p>
+          <p className="text-slate-500 text-sm mt-1 mb-5">
+            {extractErrorMessage(queryError)}
           </p>
+          <button
+            onClick={() => refetch()}
+            disabled={isRefetching}
+            className="px-4 py-2 bg-brand-800 hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            {isRefetching ? 'Reintentando...' : '↻ Reintentar'}
+          </button>
         </div>
       )}
 
