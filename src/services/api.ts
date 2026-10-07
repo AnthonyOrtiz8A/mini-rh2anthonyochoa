@@ -1,5 +1,6 @@
 // src/services/api.ts
 import axios from 'axios';
+import { notifyGlobalError } from '../utils/errorHandler';
 
 // API mock local (JSON Server) para el CRUD de empleados de este mini-proyecto.
 // No requiere autenticación: la sesión real contra API-RH vive por separado
@@ -13,3 +14,13 @@ export const apiClient = axios.create({
   },
   timeout: 10000,
 });
+
+// Errores de infraestructura (red caída, 5xx): un toast global por todas las peticiones.
+// Los errores de cada operación (400, 404...) los muestra cada hook con handleError.
+apiClient.interceptors.response.use(
+(response) => response,
+(error) => {
+notifyGlobalError(error);
+return Promise.reject(error);
+}
+);

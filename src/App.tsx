@@ -1,14 +1,17 @@
 // src/App.tsx
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import Header from './layouts/Header';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import EmployeesPage from './pages/EmployeesPage';
+import NotFoundPage from './pages/NotFoundPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleGuard from './components/RoleGuard';
 import { useAuthStore } from './store/authStore';
+
 
 // Layout con Header para páginas autenticadas
 function AppLayout({ children }: { children: ReactNode }) {
@@ -69,13 +72,29 @@ function App() {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
         {/* 404 */}
-        <Route path="*" element={
-          <div style={{ minHeight: '100vh', background: '#f8fafc', textAlign: 'center', padding: '80px' }}>
-            <h2 style={{ color: '#1e293b' }}>404 — Página no encontrada</h2>
-            <Link to="/dashboard">Volver al inicio</Link>
-          </div>
-        } />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
+
+      <Toaster
+        position="top-right"
+        gutter={8}
+        toastOptions={{
+          duration: 4000,
+          style: {
+            borderRadius: '8px',
+            background: '#1e293b',
+            color: '#f8fafc',
+            fontSize: '14px',
+          },
+          success: {
+            iconTheme: { primary: '#22c55e', secondary: '#f8fafc' },
+          },
+          error: {
+            iconTheme: { primary: '#ef4444', secondary: '#f8fafc' },
+            duration: 6000,
+          },
+        }}
+      />
     </BrowserRouter>
   );
 }
