@@ -35,3 +35,5 @@ src/
 ├── types/      # Interfaces y types de TypeScript compartidos
 └── utils/      # Funciones utilitarias y datos de ejemplo (mockData)
 ```
+
+**Enlace de despliegue:** https://036-mini-rh-anthonyochoa.netlify.app/login
