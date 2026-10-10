@@ -1,49 +1,72 @@
 // src/pages/EmployeesPage.tsx
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { Employee, Department, EmployeeStatus } from '../types';
-import EmployeeCard from '../components/EmployeeCard';
+import EmployeeTable from '../components/EmployeeTable';
+import Pagination from '../components/Pagination';
 import StatsBadge from '../components/StatsBadge';
 import FormField from '../components/FormField';
 import Modal from '../components/Modal';
 import EmployeeForm from '../components/EmployeeForm';
 import { useEmployees, useCreateEmployee, useUpdateEmployee, useDeleteEmployee } from '../hooks/useEmployees';
+import { useDebounce } from '../hooks/useDebounce';
+import { extractErrorMessage } from '../utils/errorHandler';
 import type { EmployeeFormData } from '../schemas/employeeSchema';
 import { useHasRole } from '../components/RoleGuard';
-import { extractErrorMessage } from '../utils/errorHandler';
 
 const formFieldClass = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent';
 
-// Ciclo de estados al hacer clic en la insignia de una tarjeta
-const nextStatus: Record<EmployeeStatus, EmployeeStatus> = {
-  active: 'on_leave',
-  on_leave: 'inactive',
-  inactive: 'active',
+const PAGE_SIZE = 5;
+const departments: Department[] = ['Tecnología', 'Recursos Humanos', 'Finanzas', 'Operaciones', 'Ventas'];
+const statuses: EmployeeStatus[] = ['active', 'inactive', 'on_leave'];
+const statusLabels: Record<EmployeeStatus, string> = {
+  active: 'Activo',
+  inactive: 'Inactivo',
+  on_leave: 'En permiso',
 };
 
+// Los parámetros de la URL los puede escribir cualquiera: se validan antes de usarlos
+const parsePage = (raw: string | null): number => {
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value >= 1 ? value : 1;
+};
+
+const parseOption = <T extends string>(raw: string | null, allowed: readonly T[]): T | '' =>
+  allowed.includes(raw as T) ? (raw as T) : '';
+
 function EmployeesPage() {
-  // Esta página ya está restringida por RoleGuard a ADMIN/HR_MANAGER (App.tsx).
-  // Pero eliminar empleados, en la API real, es exclusivo de ADMIN — ni HR_MANAGER
-  // puede. Es una tercera capa de restricción: acción deshabilitada según rol,
-  // no ruta bloqueada ni sección de UI oculta.
+  // La página ya está restringida por RoleGuard a ADMIN/HR_MANAGER (App.tsx).
+  // Eliminar empleados, en la API real, es exclusivo de ADMIN (ni HR_MANAGER
+  // puede), por eso la acción se deshabilita según el rol sin bloquear la ruta
+  // ni ocultar la sección.
   const canDeleteEmployees = useHasRole(['ADMIN']);
 
-  // Estado de los filtros — esto sigue siendo estado LOCAL (de la UI), no del servidor
-  const [search, setSearch] = useState<string>('');
-  const [selectedDepartment, setSelectedDepartment] = useState<Department | ''>('');
-  const [selectedStatus, setSelectedStatus] = useState<EmployeeStatus | ''>('');
+  // La página y los filtros no sensibles viven en la URL; un valor inválido se ignora
+  const [searchParams, setSearchParams] = useSearchParams();
+  const page = parsePage(searchParams.get('page'));
+  const selectedDepartment = parseOption(searchParams.get('dept'), departments);
+  const selectedStatus = parseOption(searchParams.get('status'), statuses);
 
-  // Estado del SERVIDOR: la lista de empleados, filtrada. TanStack Query se encarga
-  // de pedirla, cachearla y mantenerla sincronizada — no hay useEffect ni useState local.
-  const { data, isLoading: loading, isError, error: queryError, refetch, isRefetching } = useEmployees({
-    search: search || undefined,
+  // El texto buscado nunca se escribe en la URL (puede contener datos personales);
+  // el input lo guarda y la petición usa el valor con debounce
+  const [searchInput, setSearchInput] = useState<string>('');
+  const debouncedSearch = useDebounce(searchInput, 400);
+
+  // Estado del servidor: una página de empleados, filtrada. TanStack Query se encarga
+  // de pedirla, cachearla y mantenerla sincronizada, sin useEffect ni useState.
+  const { data, isLoading: loading, isPlaceholderData, isError, error: queryError, refetch } = useEmployees({
+    search: debouncedSearch || undefined,
     department: selectedDepartment || undefined,
     status: selectedStatus || undefined,
+    page,
+    pageSize: PAGE_SIZE,
   });
   const employees = data?.data || [];
+  const totalPages = data?.totalPages || 1;
 
-  // Segunda query, sin filtros — las estadísticas son sobre el TOTAL de empleados,
-  // no sobre el filtro activo, así que necesitan su propia lista completa cacheada aparte.
-  const { data: allData } = useEmployees({});
+  // Segunda query, sin filtros: las estadísticas son sobre el total de empleados,
+  // no sobre el filtro activo, por lo que necesitan su propia lista en caché.
+  const { data: allData, refetch: refetchAll } = useEmployees({});
   const allEmployees = useMemo(() => allData?.data ?? [], [allData]);
   const totalEmployees = allEmployees.length;
   const activeEmployees = allEmployees.filter(emp => emp.status === 'active').length;
@@ -54,41 +77,58 @@ function EmployeesPage() {
   const updateEmployee = useUpdateEmployee();
   const deleteEmployee = useDeleteEmployee();
 
-  // Estado del modal de creación/edición — reemplaza al formulario en línea de la Clase 7
+  // Estado del modal de creación/edición
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | undefined>();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Memoizamos el handler para no recrearlo en cada render
-  const handleSelectEmployee = useCallback((employee: Employee) => {
-    alert(`Empleado: ${employee.name}\nCargo: ${employee.position}\nDepartamento: ${employee.department}`);
-  }, []);
+  // Cambia un filtro en la URL y vuelve a la página 1
+  const updateParams = (updates: Record<string, string | undefined>) => {
+    const next = new URLSearchParams(searchParams);
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    });
+    next.delete('page');
+    setSearchParams(next);
+  };
 
-  const handleDeleteEmployee = useCallback((id: number) => {
-    if (!confirm('¿Estás seguro de eliminar este empleado?')) return;
-    deleteEmployee.mutate(id);
-  }, [deleteEmployee]);
+  // Al buscar solo se vuelve a la página 1; el texto no se refleja en la URL
+  const handleSearchChange = (value: string) => {
+    setSearchInput(value);
+    if (searchParams.has('page')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('page');
+      setSearchParams(next, { replace: true });
+    }
+  };
 
-  // Actualiza el estado de un empleado (ciclo Activo → En permiso → Inactivo → Activo)
-  const handleToggleStatus = useCallback((employee: Employee) => {
-    updateEmployee.mutate({ id: employee.id, data: { status: nextStatus[employee.status] } });
-  }, [updateEmployee]);
+  const handlePageChange = (newPage: number) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('page', String(newPage));
+    setSearchParams(next);
+  };
 
-  const handleOpenCreate = useCallback(() => {
+  const handleClearFilters = () => {
+    setSearchInput('');
+    setSearchParams({});
+  };
+
+  const handleOpenCreate = () => {
     setEditingEmployee(undefined);
     setSubmitError(null);
     setModalOpen(true);
-  }, []);
+  };
 
-  const handleOpenEdit = useCallback((employee: Employee) => {
+  const handleOpenEdit = (employee: Employee) => {
     setEditingEmployee(employee);
     setSubmitError(null);
     setModalOpen(true);
-  }, []);
+  };
 
-  // React Hook Form ya validó los datos con Zod antes de llegar acá —
-  // esta función solo decide crear vs. actualizar y llama a la mutación correcta.
-  const handleSubmit = useCallback(async (formData: EmployeeFormData) => {
+  // React Hook Form ya validó los datos con Zod antes de llegar aquí;
+  // esta función solo decide si crea o actualiza y llama a la mutación correspondiente.
+  const handleSubmit = async (formData: EmployeeFormData) => {
     setSubmitError(null);
     try {
       if (editingEmployee) {
@@ -100,14 +140,6 @@ function EmployeesPage() {
     } catch {
       setSubmitError('No se pudo guardar el empleado. Intenta de nuevo.');
     }
-  }, [editingEmployee, createEmployee, updateEmployee]);
-
-  const departments: Department[] = ['Tecnología', 'Recursos Humanos', 'Finanzas', 'Operaciones', 'Ventas'];
-  const statuses: EmployeeStatus[] = ['active', 'inactive', 'on_leave'];
-  const statusLabels: Record<EmployeeStatus, string> = {
-    active: 'Activo',
-    inactive: 'Inactivo',
-    on_leave: 'En permiso',
   };
 
   return (
@@ -117,7 +149,7 @@ function EmployeesPage() {
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Gestión de Empleados</h2>
           <p className="text-slate-500 mt-1">
-            {loading ? 'Cargando...' : `${employees.length} de ${totalEmployees} empleados`}
+            {loading ? 'Cargando...' : `${data?.total ?? 0} de ${totalEmployees} empleados`}
           </p>
         </div>
         <button
@@ -143,8 +175,9 @@ function EmployeesPage() {
           <input
             type="text"
             placeholder="Buscar por nombre, email o cargo..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            maxLength={100}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className={formFieldClass}
           />
         </FormField>
@@ -153,7 +186,7 @@ function EmployeesPage() {
         <FormField label="Departamento" className="min-w-[180px]">
           <select
             value={selectedDepartment}
-            onChange={(e) => setSelectedDepartment(e.target.value as Department | '')}
+            onChange={(e) => updateParams({ dept: e.target.value || undefined })}
             className={formFieldClass}
           >
             <option value="">Todos los departamentos</option>
@@ -167,7 +200,7 @@ function EmployeesPage() {
         <FormField label="Estado" className="min-w-[160px]">
           <select
             value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value as EmployeeStatus | '')}
+            onChange={(e) => updateParams({ status: e.target.value || undefined })}
             className={formFieldClass}
           >
             <option value="">Todos los estados</option>
@@ -178,9 +211,9 @@ function EmployeesPage() {
         </FormField>
 
         {/* Botón limpiar filtros */}
-        {(search || selectedDepartment || selectedStatus) && (
+        {(searchInput || selectedDepartment || selectedStatus) && (
           <button
-            onClick={() => { setSearch(''); setSelectedDepartment(''); setSelectedStatus(''); }}
+            onClick={handleClearFilters}
             className="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg text-sm transition-colors"
           >
             Limpiar filtros
@@ -188,77 +221,41 @@ function EmployeesPage() {
         )}
       </div>
 
-      {/* Estado de carga */}
-      {loading && (
-        <div className="flex items-center justify-center py-16 text-slate-400">
-          <div className="animate-spin w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full mr-3" />
-          <span>Cargando empleados...</span>
-        </div>
-      )}
-
       {/* Estado de error */}
       {isError && (
-        <div className="bg-white border border-red-200 rounded-xl shadow-sm p-6 max-w-lg mx-auto text-center">
-          <div className="mx-auto mb-3 w-12 h-12 rounded-full bg-red-100 flex items-center justify-center text-red-600 text-xl font-bold">
-            !
-          </div>
-          <p className="text-red-700 font-semibold">Error al cargar los empleados</p>
-          <p className="text-slate-500 text-sm mt-1 mb-5">
-            {extractErrorMessage(queryError)}
-          </p>
+        <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center" role="alert">
+          <p className="text-red-700 font-medium">Error al cargar los empleados</p>
+          <p className="text-red-500 text-sm mt-1">{extractErrorMessage(queryError)}</p>
           <button
-            onClick={() => refetch()}
-            disabled={isRefetching}
-            className="px-4 py-2 bg-brand-800 hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+            onClick={() => { refetch(); refetchAll(); }}
+            className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors"
           >
-            {isRefetching ? 'Reintentando...' : '↻ Reintentar'}
+            Reintentar
           </button>
         </div>
       )}
 
-      {/* Sin resultados */}
-      {!loading && !isError && employees.length === 0 && (
-        <div className="text-center py-12 text-slate-500">
-          <p>No se encontraron empleados con los filtros aplicados.</p>
-        </div>
+      {/* Tabla y paginación */}
+      {!isError && (
+        <>
+          <div className={isPlaceholderData ? 'opacity-60 transition-opacity' : ''}>
+            <EmployeeTable
+              employees={employees}
+              isLoading={loading}
+              onEdit={handleOpenEdit}
+              onDelete={canDeleteEmployees ? (id) => deleteEmployee.mutate(id) : undefined}
+            />
+          </div>
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
+            isLoading={isPlaceholderData}
+          />
+        </>
       )}
 
-      {/* Lista de empleados */}
-      {!loading && !isError && employees.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {employees.map(employee => (
-            <div key={employee.id} className="relative">
-              <div className="absolute -top-2.5 -right-2.5 z-10 flex gap-1">
-                <button
-                  onClick={() => handleOpenEdit(employee)}
-                  aria-label="Editar empleado"
-                  title="Editar empleado"
-                  className="w-6 h-6 rounded-full border-2 border-white bg-brand-600 text-white cursor-pointer text-xs leading-5 shadow-md"
-                >
-                  ✎
-                </button>
-                {canDeleteEmployees && (
-                  <button
-                    onClick={() => handleDeleteEmployee(employee.id)}
-                    aria-label="Eliminar empleado"
-                    title="Eliminar empleado"
-                    className="w-6 h-6 rounded-full border-2 border-white bg-red-500 text-white cursor-pointer text-sm leading-5 shadow-md"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-              <EmployeeCard
-                employee={employee}
-                onSelect={handleSelectEmployee}
-                onToggleStatus={handleToggleStatus}
-              />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Modal de creación/edición — React Hook Form + Zod */}
+      {/* Modal de creación/edición (React Hook Form + Zod) */}
       <Modal
         isOpen={modalOpen}
         title={editingEmployee ? `Editar: ${editingEmployee.name}` : 'Nuevo empleado'}
